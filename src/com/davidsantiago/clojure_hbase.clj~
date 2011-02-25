@@ -164,7 +164,8 @@
    created in this way (use the function table) will automatically be returned
    to the HTablePool when the body finishes."
   [bindings & body]
-  :pre
+  {:pre (vector? bindings)
+   :pre (even? (count bindings))}
   (cond
    (= (count bindings) 0) `(do ~@body)
    (symbol? (bindings 0)) `(let ~(subvec bindings 0 2)
@@ -180,8 +181,8 @@
    created in this way (use the function scanner or scan!) will automatically
    be closed when the body finishes."
   [bindings & body]
-  {:pre [ (vector? bindings)
-          (even? (count bindings))]}
+  {:pre (vector? bindings)
+   :pre (even? (count bindings))}
   (cond
    (= (count bindings) 0) `(do ~@body)
    (symbol? (bindings 0)) `(let ~(subvec bindings 0 2)
