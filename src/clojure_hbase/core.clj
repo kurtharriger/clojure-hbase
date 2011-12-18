@@ -1,22 +1,23 @@
 (ns clojure-hbase.core
   (:refer-clojure :rename {get map-get})
-  (:use clojure.contrib.def
+  (:use
         clojure-hbase.internal)
   (:import [org.apache.hadoop.hbase HBaseConfiguration HConstants KeyValue]
            [org.apache.hadoop.hbase.client HTable
             HTablePool Get Put Delete Scan Result RowLock]
            [org.apache.hadoop.hbase.util Bytes]))
 
-(defvar- put-class (Class/forName    "org.apache.hadoop.hbase.client.Put"))
-(defvar- get-class (Class/forName    "org.apache.hadoop.hbase.client.Get"))
-(defvar- delete-class (Class/forName "org.apache.hadoop.hbase.client.Delete"))
-(defvar- scan-class (Class/forName   "org.apache.hadoop.hbase.client.Scan"))
+(def ^:private put-class (Class/forName    "org.apache.hadoop.hbase.client.Put"))
+(def ^:private get-class (Class/forName    "org.apache.hadoop.hbase.client.Get"))
+(def ^:private delete-class (Class/forName "org.apache.hadoop.hbase.client.Delete"))
+(def ^:private scan-class (Class/forName   "org.apache.hadoop.hbase.client.Scan"))
 
-(defvar- #^HTablePool *db* (atom nil)
+(def ^:private ^:dynamic ^HTablePool *db*
   "This holds the HTablePool reference for all users. Users never have to see
    this, and the HBase API does not appear to me to allow configuration in code
    nor the use of multiple databases simultaneously (configuration is driven by
-   the XML config files). So we just hide this detail from the user.")
+   the XML config files). So we just hide this detail from the user."
+  (atom nil))
 
 (defn- ^HTablePool htable-pool
   []
@@ -69,7 +70,7 @@
    Functions can be passed in with arguments :map-family, :map-qualifier,
    :map-timestamp, and :map-value. You can also use :map-default to pick a
    default function, which will be overriden by the more specific directives."
-  [#^Result result & args]
+  [^Result result & args]
   (let [options      (into {} (map vec (partition 2 args)))
         default-fn   (map-get options :map-default identity)
         family-fn    (map-get options :map-family default-fn)
@@ -94,7 +95,7 @@
    Functions can be passed in with arguments :map-family, :map-qualifier,
    and :map-value. You can also use :map-default to pick a default function,
    which will be overriden by the more specific directives."
-  [#^Result result & args]
+  [^Result result & args]
   (let [options      (into {} (map vec (partition 2 args)))
         default-fn   (map-get options :map-default identity)
         family-fn    (map-get options :map-family default-fn)
@@ -126,7 +127,7 @@
    Functions can be passed in with arguments :map-family, :map-qualifier,
    :map-timestamp, and :map-value. You can also use :map-default to pick a
    default function, which will be overriden by the more specific directives."
-  [#^Result result & args]
+  [^Result result & args]
   (let [options      (into {} (map vec (partition 2 args)))
         default-fn   (map-get options :map-default identity)
         family-fn    (map-get options :map-family default-fn)
@@ -146,7 +147,7 @@
 
 (defn scanner
   "Creates a Scanner on the given table using the given Scan."
-  [#^HTable table #^Scan scan]
+  [^HTable table ^Scan scan]
   (io!
    (.getScanner table scan)))
 
@@ -158,7 +159,7 @@
 
 (defn release-table
   "Puts an HTable back into the open HTablePool."
-  [#^HTable table]
+  [^HTable table]
   (io!
    (.putTable (htable-pool) table)))
 
@@ -199,13 +200,13 @@
 
 (defn row-lock
   "Returns a RowLock on the given row of the given table."
-  [#^HTable table row]
+  [^HTable table row]
   (io!
    (.lockRow table (to-bytes row))))
 
 (defn row-unlock
   "Unlocks the row locked by the given RowLock."
-  [#^HTable table row-lock]
+  [^HTable table row-lock]
   (io!
    (.unlockRow table row-lock)))
 
@@ -213,11 +214,11 @@
   "Performs the given query actions (Get/Scan) on the given HTable. The return
    value will be a sequence of equal length, with each slot containing the
    results of the query in the corresponding position."
-  [#^HTable table & ops]
+  [^HTable table & ops]
   (io!
    (map (fn [op]
           (condp instance? op
-            get-class   (.get table #^Get op)
+            get-class   (.get table ^Get op)
             scan-class  (scanner table op)
             (throw (IllegalArgumentException.
                     "Arguments must be Get or Scan objects."))))
@@ -225,12 +226,12 @@
 
 (defn modify
   "Performs the given modifying actions (Put/Delete) on the given HTable."
-  [#^HTable table & ops]
+  [^HTable table & ops]
   (io!
    (map (fn [op]
           (condp instance? op
-            put-class     (.put table #^Put op)
-            delete-class  (.delete table #^Delete op)
+            put-class     (.put table ^Put op)
+            delete-class  (.delete table ^Delete op)
             (throw (IllegalArgumentException.
                     "Arguments must be Put or Delete objects."))))
         ops)))
@@ -253,7 +254,9 @@
       :row-lock     (new Get row (:row-lock cons-opts))
       (new Get row))))
 
-(defvar- get-argnums
+(def ^:private get-argnums
+    "This maps each get command to its number of arguments, for helping us
+   partition the command sequence."
   {:column       1    ;; :column [:family-name :qualifier]
    :columns      1    ;; :columns [:family-name [:qual1 :qual2...]...]
    :family       1    ;; :family :family-name
@@ -264,9 +267,8 @@
    :time-range   1    ;; :time-range [start end]
    :time-stamp   1    ;; :time-stamp time
    :row-lock     1    ;; :row-lock <a row lock you've got>
-   :use-existing 1}   ;; :use-existing <some Get you've made>
-  "This maps each get command to its number of arguments, for helping us
-   partition the command sequence.")
+   :use-existing 1    ;; :use-existing <some Get you've made>
+   })
 
 (defn- handle-get-columns
   "Handles the case where a get operation has requested columns with the
@@ -287,7 +289,7 @@
    :row-lock."
   [row & args]
   (let [specs (partition-query args get-argnums)
-        #^Get get-op (make-get row specs)]
+        ^Get get-op (make-get row specs)]
     (doseq [spec specs]
       (condp = (first spec)
           :column       (apply #(.addColumn get-op
@@ -307,8 +309,8 @@
 (defn get
   "Creates and executes a Get object against the given table. Options are
    the same as for get."
-  [#^HTable table row & args]
-  (let [g #^Get (apply get* row args)]
+  [^HTable table row & args]
+  (let [g ^Get (apply get* row args)]
     (io!
      (.get table g))))
 
@@ -316,14 +318,15 @@
 ;;  PUT
 ;;
 
-(defvar- put-argnums
+(def ^:private put-argnums
+  "This maps each put command to its number of arguments, for helping us
+   partition the command sequence."
   {:value        1    ;; :value [:family :column <value>]
    :values       1    ;; :values [:family [:column1 value1 ...] ...]
    :write-to-WAL 1    ;; :write-to-WAL true/false
    :row-lock     1    ;; :row-lock <a row lock you've got>
-   :use-existing 1}   ;; :use-existing <a Put you've made>
-  "This maps each put command to its number of arguments, for helping us
-   partition the command sequence.")
+   :use-existing 1    ;; :use-existing <a Put you've made>
+   })
 
 (defn- make-put
   "Makes a Put object, taking into account user directives, such as using
@@ -340,11 +343,11 @@
       (new Put row))))
 
 (defn- put-add
-  [#^Put put-op family qualifier value]
+  [^Put put-op family qualifier value]
   (.add put-op (to-bytes family) (to-bytes qualifier) (to-bytes value)))
 
 (defn- handle-put-values
-  [#^Put put-op values]
+  [^Put put-op values]
   (doseq [value (partition 2 values)]
     (let [[family qv-pairs] value]
       (doseq [[q v] (partition 2 qv-pairs)]
@@ -358,7 +361,7 @@
    :row-lock."
   [row & args]
   (let [specs  (partition-query args put-argnums)
-        #^Put put-op (make-put row specs)]
+        ^Put put-op (make-put row specs)]
     (doseq [spec specs]
       (condp = (first spec)
           :value          (apply put-add put-op (second spec))
@@ -369,25 +372,25 @@
 (defn put
   "Creates and executes a Put object against the given table. Options are
    the same as for put."
-  [#^HTable table row & args]
-  (let [p #^Put (apply put* row args)]
+  [^HTable table row & args]
+  (let [p ^Put (apply put* row args)]
     (io!
      (.put table p))))
 
 (defn check-and-put
   "Atomically checks that the row-family-qualifier-value match the values we
    give, and if so, executes the Put."
-  ([#^HTable table row family qualifier value #^Put put]
+  ([^HTable table row family qualifier value ^Put put]
      (.checkAndPut table (to-bytes row) (to-bytes family) (to-bytes qualifier)
                    (to-bytes value) put))
-  ([#^HTable table [row family qualifier value] #^Put put]
+  ([^HTable table [row family qualifier value] ^Put put]
      (check-and-put table row family qualifier value put)))
 
 (defn insert
   "If the family and qualifier are non-existent, the Put will be committed.
    The row is taken from the Put object, but the family and qualifier cannot
    be determined from a Put object, so they must be specified."
-  [#^HTable table family qualifier ^Put put]
+  [^HTable table family qualifier ^Put put]
   (check-and-put table (.getRow put) family qualifier
                  (byte-array 0) put))
 
@@ -395,17 +398,18 @@
 ;; DELETE
 ;;
 
-(defvar- delete-argnums
+(def ^:private delete-argnums
+  "This maps each delete command to its number of arguments, for helping us
+   partition the command sequence."
   {:column                1    ;; :column [:family-name :qualifier]
    :columns               1    ;; :columns [:family-name [:q1 :q2...]...]
    :family                1    ;; :family :family-name
    :families              1    ;; :families [:family1 :family2 ...]
-   :with-timestamp        2    ;; :with-timestamp <long> [:column [...]
+   :with-timestamp        2    ;; :with-timestamp <long> [:column [...]]
    :with-timestamp-before 2    ;; :with-timestamp-before <long> [:column ...]
    :row-lock              1    ;; :row-lock <a row lock you've got>
-   :use-existing          1}   ;; :use-existing <a Put you've made>
-  "This maps each delete command to its number of arguments, for helping us
-   partition the command sequence.")
+   :use-existing          1    ;; :use-existing <a Put you've made>
+  })
 
 (defn- make-delete
   "Makes a Delete object, taking into account user directives, such as using
@@ -423,27 +427,27 @@
       (new Delete row))))
 
 (defn- delete-column
-  [#^Delete delete-op family qualifier]
+  [^Delete delete-op family qualifier]
   (.deleteColumn delete-op (to-bytes family) (to-bytes qualifier)))
 
 (defn- delete-column-with-timestamp
-  [#^Delete delete-op family qualifier timestamp]
+  [^Delete delete-op family qualifier timestamp]
   (.deleteColumn delete-op (to-bytes family) (to-bytes qualifier) timestamp))
 
 (defn- delete-column-before-timestamp
-  [#^Delete delete-op family qualifier timestamp]
+  [^Delete delete-op family qualifier timestamp]
   (.deleteColumns delete-op (to-bytes family) (to-bytes qualifier) timestamp))
 
 (defn- delete-family
-  [#^Delete delete-op family]
+  [^Delete delete-op family]
   (.deleteFamily delete-op (to-bytes family)))
 
 (defn- delete-family-timestamp
-  [#^Delete delete-op family timestamp]
+  [^Delete delete-op family timestamp]
   (.deleteFamily delete-op (to-bytes family) timestamp))
 
 (defn- handle-delete-ts
-  [#^Delete delete-op ts-specs]
+  [^Delete delete-op ts-specs]
   (doseq [[ts-op timestamp specs] (partition 3 ts-specs)
           spec specs]
     (condp = ts-op
@@ -494,8 +498,8 @@
 (defn delete
   "Creates and executes a Delete object against the given table. Options are
    the same as for delete."
-  [#^HTable table row & args]
-  (let [d #^Delete (apply delete* row args)]
+  [^HTable table row & args]
+  (let [d ^Delete (apply delete* row args)]
     (io!
      (.delete table d))))
 
@@ -503,7 +507,9 @@
 ;; SCAN
 ;;
 
-(defvar- scan-argnums
+(def ^:private scan-argnums
+  "This maps each scan command to its number of arguments, for helping us
+   partition the command sequence."
   {:column       1    ;; :column [:family-name :qualifier]
    :columns      1    ;; :columns [:family-name [:qual1 :qual2...]...]
    :family       1    ;; :family :family-name
@@ -515,9 +521,9 @@
    :time-stamp   1    ;; :time-stamp time
    :start-row    1    ;; :start-row row
    :stop-row     1    ;; :stop-row row
-   :use-existing 1}   ;; :use-existing <some Get you've made>
-  "This maps each scan command to its number of arguments, for helping us
-   partition the command sequence.")
+   :use-existing 1    ;; :use-existing <some Get you've made>
+   })
+
 
 (defn- make-scan
   [options]
@@ -535,7 +541,7 @@
    :use-existing."
   [& args]
   (let [specs   (partition-query args scan-argnums)
-        scan-op #^Scan (make-scan specs)]
+        scan-op ^Scan (make-scan specs)]
     (doseq [spec specs]
       (condp = (first spec)
           :column       (apply #(.addColumn scan-op
@@ -558,7 +564,7 @@
   "Creates and runs a Scan object. All arguments are the same as scan.
    ResultScanner implements Iterable, so you should be able to just use it
    directly, but don't forget to .close it! Better yet, use with-scanner."
-  [#^HTable table & args]
+  [^HTable table & args]
   (let [s (apply scan* args)]
     (io!
      (scanner table s))))
