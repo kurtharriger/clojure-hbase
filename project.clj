@@ -1,5 +1,6 @@
 (defproject org.clojars.kurtharriger/clojure-hbase "0.90.5-2.1"
   :description "A convenient Clojure interface to HBase."
+  :url "https://github.com/kurtharriger/clojure-hbase"
   :dependencies [[org.clojure/clojure "1.2.0"]
                  [org.apache.hadoop/hadoop-core "0.20.205.0"]
                  [org.apache.hbase/hbase "0.90.5"]
